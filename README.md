@@ -81,6 +81,16 @@ Levantar MongoDB con Docker:
 docker-compose up -d
 ```
 
+**📊 Para visualizar la base de datos:**
+
+Si tienes un cliente MongoDB local (MongoDB Compass, Studio 3T, etc.), conecta usando:
+
+```
+mongodb://host.docker.internal:27017/nest-pokemon
+```
+
+Esta URL permite acceder al contenedor Docker desde tu motor MongoDB local.
+
 ### 5. Ejecutar en modo desarrollo
 
 ```bash
