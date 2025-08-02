@@ -9,8 +9,11 @@ async function bootstrap() {
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true, // Automatically transforms payloads to DTO instances
+    transformOptions: {
+      enableImplicitConversion: true
+    }
   }))
   app.setGlobalPrefix('api'); 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT!);
 }
 bootstrap();

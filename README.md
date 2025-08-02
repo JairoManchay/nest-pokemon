@@ -29,10 +29,12 @@ API RESTful de Pokédex desarrollada con NestJS, TypeScript y MongoDB. Esta apli
 
 - ✅ API RESTful con NestJS
 - ✅ Base de datos MongoDB con Docker
+- ✅ Configuración mediante variables de entorno
 - ✅ Validación de datos con class-validator
 - ✅ Documentación automática con Swagger
 - ✅ Manejo de errores personalizado
 - ✅ DTOs para validación de entrada
+- ✅ Arquitectura modular y escalable
 
 ## Requisitos previos
 
@@ -55,7 +57,23 @@ cd pokedex
 npm install
 ```
 
-### 3. Configurar la base de datos
+### 3. Configurar variables de entorno
+
+Crear el archivo de configuración copiando la plantilla:
+
+```bash
+# En Windows (PowerShell)
+Copy-Item .env.template .env
+
+# En Linux/Mac
+cp .env.template .env
+```
+
+Editar el archivo `.env` según tu entorno. El archivo `.env.template` contiene todas las variables necesarias.
+
+**⚠️ Importante**: El archivo `.env` está en `.gitignore` y NO se sube al repositorio.
+
+### 4. Configurar la base de datos
 
 Levantar MongoDB con Docker:
 
@@ -63,7 +81,7 @@ Levantar MongoDB con Docker:
 docker-compose up -d
 ```
 
-### 4. Ejecutar en modo desarrollo
+### 5. Ejecutar en modo desarrollo
 
 ```bash
 # Modo desarrollo con watch (recomendado)
@@ -74,6 +92,29 @@ npm run start
 ```
 
 La aplicación estará disponible en: `http://localhost:3000`
+
+### 6. Poblar la base de datos (Seed)
+
+**¡IMPORTANTE!** Para probar el CRUD de Pokémon, necesitas generar datos de prueba:
+
+```bash
+# Realizar petición GET al endpoint de seed
+GET http://localhost:3000/seed
+```
+
+O usando curl en terminal:
+
+```bash
+curl http://localhost:3000/seed
+```
+
+Este endpoint:
+- ✅ Limpia la base de datos actual
+- ✅ Descarga datos de la [PokéAPI](https://pokeapi.co/)
+- ✅ Inserta 10 Pokémon de prueba en tu base de datos
+- ✅ Permite probar inmediatamente el CRUD
+
+**Nota**: Solo necesitas ejecutar el seed una vez, o cuando quieras resetear los datos.
 
 ## Scripts disponibles
 
@@ -96,13 +137,132 @@ docker-compose up -d   # Levantar MongoDB
 docker-compose down    # Detener MongoDB
 ```
 
-## Endpoints principales
+## Endpoints de la API
 
+### 🌱 Seed (Generar datos de prueba)
+- `GET /seed` - **¡Ejecutar PRIMERO!** Pobla la base de datos con 10 Pokémon
+
+### 🔍 Pokémon CRUD
 - `GET /pokemon` - Listar todos los Pokémon
-- `GET /pokemon/:id` - Obtener Pokémon por ID
+- `GET /pokemon/:term` - Buscar Pokémon por:
+  - **ID de MongoDB** (ej: `507f1f77bcf86cd799439011`)
+  - **Número** (ej: `25` para Pikachu)
+  - **Nombre** (ej: `pikachu`)
 - `POST /pokemon` - Crear nuevo Pokémon
-- `PATCH /pokemon/:id` - Actualizar Pokémon
-- `DELETE /pokemon/:id` - Eliminar Pokémon
+  ```json
+  {
+    "no": 151,
+    "name": "mew"
+  }
+  ```
+- `PATCH /pokemon/:term` - Actualizar Pokémon
+- `DELETE /pokemon/:term` - Eliminar Pokémon
+
+### 📝 Ejemplos de uso
+
+```bash
+# 1. Poblar base de datos
+curl localhost:3000/api/seed
+
+# 2. Listar todos los Pokémon
+curl http://localhost:3000/api/pokemon
+
+# 3. Buscar Pikachu (número 25)
+curl http://localhost:3000/api/pokemon/25
+
+# 4. Buscar por nombre
+curl http://localhost:3000/api/pokemon/pikachu
+
+# 5. Crear nuevo Pokémon
+curl -X POST http://localhost:3000/api/pokemon \
+  -H "Content-Type: application/json" \
+  -d '{"no": 151, "name": "mew"}'
+```
+
+## 🏗️ Arquitectura - Módulo Common
+
+Se implementó un módulo `common` siguiendo principios de **Clean Architecture** y **SOLID**, que contiene componentes reutilizables en toda la aplicación:
+
+### 📡 HTTP Adapter Pattern
+
+**Ubicación**: `src/common/adapters/`
+
+Se implementó el patrón Adapter para abstraer las peticiones HTTP y hacerlas intercambiables:
+
+```typescript
+// Interface que define el contrato
+interface HTTPAdapter {
+  get<T>(url: string): Promise<T>;
+}
+
+// Implementación concreta con Axios
+@Injectable()
+export class AxiosAdapter implements HTTPAdapter {
+  async get<T>(url: string): Promise<T> {
+    // Implementación con manejo de errores
+  }
+}
+```
+
+**Beneficios:**
+- ✅ **Intercambiable**: Fácil cambio de librería HTTP (Axios → Fetch, etc.)
+- ✅ **Testeable**: Mock del adapter en pruebas unitarias
+- ✅ **Reutilizable**: Un solo punto para configurar peticiones HTTP
+- ✅ **Manejo centralizado de errores**
+
+### 🔧 Custom Pipes
+
+**Ubicación**: `src/common/pipes/`
+
+#### ParseMongoIdPipe
+Pipe personalizado para validar IDs de MongoDB:
+
+```typescript
+@Injectable()
+export class ParseMongoIdPipe implements PipeTransform {
+  transform(value: any, metadata: ArgumentMetadata) {
+    if(!isValidObjectId(value)){
+      throw new BadRequestException(`"${value}" is not a valid Mongo ID`);
+    }
+    return value;
+  }
+}
+```
+
+**Uso en controladores:**
+```typescript
+@Get(':id')
+findOne(@Param('id', ParseMongoIdPipe) id: string) {
+  return this.pokemonService.findOne(id);
+}
+```
+
+**Beneficios:**
+- ✅ **Validación automática** de ObjectIds de MongoDB
+- ✅ **Mensajes de error claros** y consistentes
+- ✅ **Reutilizable** en todos los controladores
+- ✅ **Fail fast**: Valida antes de llegar al service
+
+### 📦 CommonModule
+
+**Ubicación**: `src/common/common.module.ts`
+
+Módulo que centraliza y exporta todos los componentes comunes:
+
+```typescript
+@Module({
+  providers: [AxiosAdapter],
+  exports: [AxiosAdapter],
+})
+export class CommonModule {}
+```
+
+### 🎯 Principios aplicados
+
+- **Single Responsibility**: Cada clase tiene una responsabilidad única
+- **Open/Closed**: Abierto para extensión, cerrado para modificación
+- **Dependency Inversion**: Depende de abstracciones, no de concreciones
+- **DRY**: Don't Repeat Yourself - Componentes reutilizables
 
 ## Tecnologías utilizadas
 
